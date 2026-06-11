@@ -563,15 +563,18 @@ document.addEventListener('DOMContentLoaded', function() {
   let currentQrUuid = null;
 
   // Helper: resolve the correct base URL for mobile QR links.
-  // Fetches /api/network-info from the server to get its LAN IP, so the QR
-  // code URL works on the phone instead of pointing to localhost.
+  // If the server reports a LAN IP (starts with 192.168.), use it so the QR
+  // URL works on the phone. Otherwise the server is live/public and API_BASE_URL
+  // already points to the right host — use that directly.
   async function getMobileBaseUrl() {
     try {
       const res  = await fetch(`${API_BASE_URL}/api/network-info`);
       const info = await res.json();
-      if (info && info.baseUrl) return info.baseUrl;
+      if (info && info.lanIp && info.lanIp.startsWith('192.168.')) {
+        return info.baseUrl; // local network — use LAN IP
+      }
     } catch (_) { /* fall through */ }
-    return API_BASE_URL; // fallback: localhost (works when phone is the same device)
+    return API_BASE_URL; // live server or fallback
   }
 
   // Helper: show QR code image + URL for a given uuid + mobileBase
