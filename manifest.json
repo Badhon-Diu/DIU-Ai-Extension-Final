@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "DIU IntelliMarks",
+  "version": "1.0.0",
+  "description": "AI-powered marks assistant for DIU - Voice, Image & QR Scan",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "microphone"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://localhost:3001/*",
+    "https://ai-api-remake.onrender.com/"
+
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

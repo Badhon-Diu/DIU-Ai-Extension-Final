@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DIU Marks Auto-Fill</title>
+  <style>
+    :root {
+      /* Light Professional Theme - Linear Style */
+      --bg-primary: #f8fafc;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #f1f5f9;
+      --border-color: rgba(0, 0, 0, 0.06);
+      --border-hover: rgba(99, 102, 241, 0.2);
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      --accent-primary: #6366f1;
+      --accent-secondary: #8b5cf6;
+      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      --accent-gradient-light: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
+      --success: #10b981;
+      --success-light: rgba(16, 185, 129, 0.1);
+      --error: #ef4444;
+      --error-light: rgba(239, 68, 68, 0.1);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.08);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 20px;
+      --transition-fast: 150ms ease;
+      --transition-normal: 250ms ease;
+      --transition-slow: 400ms ease;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 420px;
+      min-height: 500px;
+      max-height: 600px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow: hidden;
+    }
+
+    /* Custom Scrollbar - Thin & Subtle */
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+      border-radius: 2px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 2px;
+      transition: background var(--transition-fast);
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+
+    /* Scrollable containers */
+    .saved-data,
+    .file-list,
+    .ai-results-content,
+    .voice-chat-container {
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-color) transparent;
+    }
+
+    /* Header */
+    .header {
+      background: var(--bg-secondary);
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .logo-icon {
+      width: 34px;
+      height: 34px;
+      background: var(--accent-gradient);
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 17px;
+      color: white;
+      box-shadow: 0 2px 6px rgba(99, 102, 241, 0.25);
+      flex-shrink: 0;
+    }
+
+    .logo-text {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.3px;
+    }
+
+    /* Tabs */
+    .tab-container {
+      background: var(--bg-secondary);
+      padding: 6px 16px;
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 54px;
+      z-index: 15;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 9px 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      transition: all var(--transition-fast);
+      position: relative;
+    }
+
+    .tab::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--accent-gradient-light);
+      opacity: 0;
+      transition: opacity var(--transition-fast);
+      border-radius: var(--radius-sm);
+      z-index: -1;
+    }
+
+    .tab:hover {
+      color: var(--text-secondary);
+    }
+
+    .tab:hover::before {
+      opacity: 1;
+    }
+
+    .tab.active {
+      color: var(--accent-primary);
+      font-weight: 600;
+      background: var(--accent-gradient-light);
+    }
+
+    /* Content Area - Fixed Layout */
+    .content {
+      padding: 16px 20px;
+      height: calc(100vh - 110px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 200ms ease-out;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Typography */
+    .section-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+      letter-spacing: -0.2px;
+    }
+
+    .section-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 18px;
+      line-height: 1.5;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      margin-bottom: 12px;
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .card:hover {
+      border-color: var(--border-hover);
+      box-shadow: var(--shadow-md);
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    /* Form Elements */
+    select, input[type="text"], input[type="number"], textarea {
+      width: 100%;
+      padding: 11px 13px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      transition: all var(--transition-fast);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+    }
+
+    select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      background-size: 14px;
+      padding-right: 34px;
+      cursor: pointer;
+    }
+
+    select:focus, input:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      background: var(--bg-secondary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+    }
+
+    .data-input {
+      width: 100%;
+      min-height: 110px;
+      padding: 13px 15px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-family: 'SF Mono', Monaco, 'Fira Code', monospace;
+      resize: vertical;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 9px;
+      line-height: 1.5;
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.3);
+      opacity: 0;
+      transition: opacity var(--transition-fast);
+    }
+
+    .btn:hover::after {
+      opacity: 1;
+    }
+
+    .btn-primary {
+      background: var(--accent-gradient);
+      color: white;
+      box-shadow: 0 2px 6px rgba(99, 102, 241, 0.25);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+    }
+
+    .btn-success:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-primary);
+      border-color: var(--accent-primary);
+      color: var(--text-primary);
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 9px;
+      margin-top: 11px;
+    }
+
+    .btn-group .btn {
+      flex: 1;
+    }
+
+    /* Status Messages */
+    .status {
+      padding: 11px 13px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      margin-top: 11px;
+      display: none;
+      border: 1px solid transparent;
+    }
+
+    .status.success {
+      display: block;
+      background: var(--success-light);
+      color: #065f46;
+      border-color: rgba(16, 185, 129, 0.25);
+    }
+
+    .status.error {
+      display: block;
+      background: var(--error-light);
+      color: #991b1b;
+      border-color: rgba(239, 68, 68, 0.25);
+    }
+
+    /* Saved Data List */
+    .saved-data {
+      max-height: 170px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .student-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 9px 11px;
+      background: var(--bg-tertiary);
+      border-radius: var(--radius-sm);
+      margin-bottom: 5px;
+      border: 1px solid var(--border-color);
+      transition: border-color var(--transition-fast);
+    }
+
+    .student-item:hover {
+      border-color: var(--accent-primary);
+    }
+
+    .student-id {
+      font-weight: 600;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .student-score {
+      color: var(--accent-primary);
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 28px 20px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    /* Coming Soon */
+    .coming-soon {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 260px;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .coming-soon-icon {
+      width: 64px;
+      height: 64px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+      font-size: 26px;
+      color: var(--text-muted);
+    }
+
+    .coming-soon-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 7px;
+    }
+
+    .coming-soon-text {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Upload Section */
+    .upload-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .upload-dropzone {
+      border: 2px dashed var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 32px 18px;
+      text-align: center;
+      cursor: pointer;
+      transition: all var(--transition-normal);
+      background: var(--bg-primary);
+      position: relative;
+    }
+
+    .upload-dropzone:hover {
+      border-color: var(--accent-primary);
+      background: var(--accent-gradient-light);
+    }
+
+    .upload-dropzone.dragover {
+      border-color: var(--accent-primary);
+      background: var(--accent-gradient-light);
+    }
+
+    .upload-icon {
+      font-size: 36px;
+      margin-bottom: 10px;
+      color: var(--text-muted);
+      transition: color var(--transition-fast);
+      line-height: 1;
+    }
+
+    .upload-dropzone:hover .upload-icon {
+      color: var(--accent-primary);
+    }
+
+    .upload-text {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+
+    .upload-subtext {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .upload-formats {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 12px;
+      opacity: 0.9;
+    }
+
+    .file-list {
+      max-height: 190px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px;
+      background: var(--bg-tertiary);
+      border-radius: var(--radius-sm);
+      margin-bottom: 7px;
+      border: 1px solid var(--border-color);
+      transition: border-color var(--transition-fast);
+    }
+
+    .file-item:hover {
+      border-color: var(--accent-primary);
+    }
+
+    .file-info {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .file-icon {
+      font-size: 19px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .file-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .file-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      word-break: break-all;
+      line-height: 1.4;
+    }
+
+    .file-size {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .file-remove {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 17px;
+      padding: 3px 7px;
+      border-radius: var(--radius-sm);
+      transition: all var(--transition-fast);
+      flex-shrink: 0;
+    }
+
+    .file-remove:hover {
+      color: var(--error);
+      background: var(--error-light);
+    }
+
+    .file-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 11px;
+      padding-bottom: 11px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .file-count {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .clear-all {
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 3px 7px;
+      border-radius: var(--radius-sm);
+      transition: all var(--transition-fast);
+    }
+
+    .clear-all:hover {
+      color: var(--error);
+      background: var(--error-light);
+    }
+
+    /* Processing State */
+    .processing {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 190px;
+      text-align: center;
+      padding: 18px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--accent-primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .processing-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    /* AI Results */
+    .ai-results {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 13px;
+      margin-top: 13px;
+    }
+
+    .ai-results-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 11px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .ai-results-content {
+      font-family: 'SF Mono', Monaco, 'Fira Code', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      max-height: 190px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .result-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 9px;
+      background: var(--bg-secondary);
+      border-radius: var(--radius-sm);
+      margin-bottom: 4px;
+      border: 1px solid var(--border-color);
+    }
+
+    .result-id {
+      color: var(--accent-primary);
+      font-weight: 600;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .result-score {
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .mismatch-section {
+      margin-top: 13px;
+      padding-top: 13px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .mismatch-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--error);
+      margin-bottom: 9px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .mismatch-item {
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 4px 9px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      margin-bottom: 5px;
+      display: inline-block;
+      margin-right: 5px;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Voice Recording Styles */
+    .voice-section {
+      margin-top: 14px;
+    }
+
+    .voice-record-btn {
+      width: 100%;
+      padding: 20px;
+      border: 2px dashed var(--border-color);
+      border-radius: var(--radius-lg);
+      background: var(--bg-primary);
+      cursor: pointer;
+      transition: all var(--transition-normal);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 9px;
+      position: relative;
+    }
+
+    .voice-record-btn:hover {
+      border-color: var(--accent-primary);
+      background: var(--accent-gradient-light);
+    }
+
+    .voice-record-btn.recording {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(220, 38, 38, 0.06) 100%);
+      border-color: var(--error);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
+      50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+    }
+
+    .voice-icon {
+      font-size: 26px;
+      color: var(--text-muted);
+      transition: color var(--transition-fast);
+      line-height: 1;
+    }
+
+    .voice-record-btn:hover .voice-icon {
+      color: var(--accent-primary);
+    }
+
+    .voice-record-btn.recording .voice-icon {
+      color: var(--error);
+    }
+
+    .voice-text {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      transition: color var(--transition-fast);
+    }
+
+    .voice-record-btn:hover .voice-text {
+      color: var(--text-primary);
+    }
+
+    .voice-record-btn.recording .voice-text {
+      color: var(--error);
+    }
+
+    .voice-subtext {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .recording-indicator {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 12px;
+      padding: 9px 14px;
+      background: var(--error-light);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: 18px;
+      color: #991b1b;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .recording-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--error);
+      border-radius: 50%;
+      animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .voice-processing {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 26px 18px;
+      text-align: center;
+    }
+
+    .voice-wave {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      height: 32px;
+      margin-bottom: 16px;
+    }
+
+    .voice-bar {
+      width: 2px;
+      background: var(--accent-gradient);
+      border-radius: 1px;
+      animation: wave 1.2s ease-in-out infinite;
+    }
+
+    .voice-bar:nth-child(1) { height: 20%; animation-delay: 0s; }
+    .voice-bar:nth-child(2) { height: 45%; animation-delay: 0.1s; }
+    .voice-bar:nth-child(3) { height: 70%; animation-delay: 0.2s; }
+    .voice-bar:nth-child(4) { height: 100%; animation-delay: 0.3s; }
+    .voice-bar:nth-child(5) { height: 70%; animation-delay: 0.4s; }
+    .voice-bar:nth-child(6) { height: 45%; animation-delay: 0.5s; }
+    .voice-bar:nth-child(7) { height: 85%; animation-delay: 0.6s; }
+    .voice-bar:nth-child(8) { height: 55%; animation-delay: 0.7s; }
+    .voice-bar:nth-child(9) { height: 30%; animation-delay: 0.8s; }
+    .voice-bar:nth-child(10) { height: 60%; animation-delay: 0.9s; }
+
+    @keyframes wave {
+      0%, 100% { transform: scaleY(0.6); }
+      50% { transform: scaleY(1); }
+    }
+
+    .chat-bubble {
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      padding: 10px 13px;
+      border-radius: var(--radius-md);
+      border-bottom-left-radius: 4px;
+      font-size: 14px;
+      margin-bottom: 9px;
+      max-width: 85%;
+      border: 1px solid var(--border-color);
+      line-height: 1.5;
+    }
+
+    .chat-bubble.ai {
+      background: var(--accent-gradient);
+      color: white;
+      border-bottom-left-radius: var(--radius-md);
+      border-bottom-right-radius: 4px;
+      margin-left: auto;
+      border: none;
+    }
+
+    .voice-chat-container {
+      max-height: 190px;
+      overflow-y: auto;
+      padding: 6px 2px;
+    }
+
+    /* Manual Section Toggle */
+    #manualToggle {
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    #manualToggle::after {
+      content: '▾';
+      font-size: 9px;
+      transition: transform var(--transition-fast);
+      color: var(--text-muted);
+      line-height: 1;
+    }
+
+    #manualToggle.expanded::after {
+      transform: rotate(180deg);
+    }
+
+    /* Focus visible for accessibility */
+    :focus-visible {
+      outline: 2px solid var(--accent-primary);
+      outline-offset: 2px;
+    }
+
+    /* Reduce motion preference */
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* QR Scan Styles */
+    .qr-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .qr-container {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+    }
+
+    .qr-code {
+      width: 160px;
+      height: 160px;
+      background: var(--bg-primary);
+      border: 2px solid var(--border-color);
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .qr-pattern {
+      width: 120px;
+      height: 120px;
+      background-image:
+        linear-gradient(90deg, var(--text-primary) 2px, transparent 2px),
+        linear-gradient(var(--text-primary) 2px, transparent 2px);
+      background-size: 14px 14px;
+      position: relative;
+    }
+
+    .qr-pattern::before,
+    .qr-pattern::after {
+      content: '';
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      border: 4px solid var(--text-primary);
+      background: var(--bg-primary);
+    }
+
+    .qr-pattern::before {
+      top: 4px;
+      left: 4px;
+    }
+
+    .qr-pattern::after {
+      top: 4px;
+      right: 4px;
+    }
+
+    .qr-corner {
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      border: 4px solid var(--text-primary);
+      background: var(--bg-primary);
+      bottom: 4px;
+      left: 4px;
+    }
+
+    .qr-scanned .qr-pattern {
+      opacity: 0.3;
+    }
+
+    .qr-scanned::after {
+      content: 'SCANNED';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--success);
+      color: white;
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .timer-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .timer-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .timer-bar {
+      width: 160px;
+      height: 4px;
+      background: var(--bg-tertiary);
+      border-radius: 2px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .timer-progress {
+      height: 100%;
+      background: var(--accent-gradient);
+      border-radius: 2px;
+      transition: width 1s linear;
+    }
+
+    .timer-countdown {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--accent-primary);
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .scan-status {
+      font-size: 13px;
+      color: var(--text-secondary);
+      text-align: center;
+    }
+
+    .scan-status.scanning {
+      color: var(--accent-primary);
+    }
+
+    .scan-status.complete {
+      color: var(--success);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-icon">
+      <img src="exicon.svg" alt="DIU IntelliMarks" style="width: 24px; height: 24px;">
+    </div>
+    <div class="logo-text">DIU IntelliMarks</div>
+  </div>
+  
+  <div class="tab-container">
+    <button class="tab active" data-tab="audio">Audio</button>
+    <button class="tab" data-tab="upload">Upload Images</button>
+    <button class="tab" data-tab="qrscan">QR Scan</button>
+  </div>
+  
+  <div class="content">
+    <div id="audio" class="tab-content active">
+      <div class="section-title">Voice with AI</div>
+      <div class="section-subtitle">Record marks and let AI process them</div>
+      
+      <!-- Assessment Type Selection -->
+      <div class="card">
+        <div class="card-title">Select Assessment Type</div>
+        <select id="voiceAssessmentType">
+          <option value="">Choose assessment...</option>
+          <option value="quiz1">Quiz 1 (/15)</option>
+          <option value="quiz2">Quiz 2 (/15)</option>
+          <option value="quiz3">Quiz 3 (/15)</option>
+          <option value="assignment">Assignment (/5)</option>
+          <option value="midterm">Midterm (/25)</option>
+          <option value="final">Final (/40)</option>
+        </select>
+      </div>
+      
+      <!-- Voice Recording -->
+      <div class="card" id="voiceRecordCard">
+        <div class="card-title">Voice Recording</div>
+        <div class="voice-section">
+          <button class="voice-record-btn" id="voiceRecordBtn">
+            <span class="voice-icon">●</span>
+            <span class="voice-text">Voice with AI</span>
+            <span class="voice-subtext">Click to start recording</span>
+          </button>
+          <div class="recording-indicator hidden" id="recordingIndicator">
+            <span class="recording-dot"></span>
+            <span>Recording...</span>
+          </div>
+          <div id="voiceStatus" class="status" style="margin-top: 10px;"></div>
+        </div>
+      </div>
+      
+      <!-- Voice Processing -->
+      <div class="card hidden" id="voiceProcessingCard">
+        <div class="voice-processing">
+          <div class="voice-wave">
+            <div class="voice-bar"></div>
+            <div class="voice-bar"></div>
+            <div class="voice-bar"></div>
+            <div class="voice-bar"></div>
+            <div class="voice-bar"></div>
+            <div class="voice-bar"></div>
+            <div class="voice-bar"></div>
+            <div class="voice-bar"></div>
+            <div class="voice-bar"></div>
+            <div class="voice-bar"></div>
+          </div>
+          <div class="processing-text">AI is listening and analyzing...</div>
+        </div>
+      </div>
+      
+      <!-- AI Chat Results -->
+      <div class="card hidden" id="voiceChatCard">
+        <div class="card-title">Voice Chat with AI</div>
+        <div class="voice-chat-container" id="voiceChatContainer"></div>
+      </div>
+      
+      <!-- AI Analysis Results -->
+      <div class="card hidden" id="voiceResultsCard">
+        <div class="ai-results-title">AI Analysis Results</div>
+        <div class="ai-results">
+          <div class="ai-results-content" id="voiceAiResultsContent"></div>
+        </div>
+        <div class="mismatch-section hidden" id="voiceMismatchSection">
+          <div class="mismatch-title">Mismatched IDs (Not found in portal)</div>
+          <div id="voiceMismatchList"></div>
+        </div>
+        <button class="btn btn-success" id="voiceFillAIBtn" style="margin-top: 16px;">Auto-Fill Matching Results</button>
+        <button class="btn btn-secondary" id="voiceResetBtn" style="margin-top: 10px;">Record Again</button>
+      </div>
+      
+      <!-- Manual Entry Section (Collapsible) -->
+      <div class="card" style="margin-top: 20px;">
+        <div class="card-title" style="cursor: pointer;" id="manualToggle">Manual Entry (Click to expand)</div>
+        <div id="manualSection" style="display: none; margin-top: 16px;">
+          <div style="margin-bottom: 12px;">
+            <select id="columnSelect" style="margin-bottom: 12px;">
+              <option value="quiz1">Quiz 1 (/15)</option>
+              <option value="quiz2">Quiz 2 (/15)</option>
+              <option value="quiz3">Quiz 3 (/15)</option>
+              <option value="attendance">Attendance (/7)</option>
+              <option value="presentation">Presentation (/8)</option>
+              <option value="assignment">Assignment (/5)</option>
+              <option value="midterm">Midterm (/25)</option>
+              <option value="final">Final (/40)</option>
+            </select>
+          </div>
+          <textarea id="dataInput" class="data-input" placeholder="232-15-012: 10&#10;232-15-019: 12&#10;232-15-028: 8"></textarea>
+          <p class="hint">Format: StudentID: Score (one per line)</p>
+          <button id="saveBtn" class="btn btn-primary" style="margin-top: 16px;">Save Data</button>
+          <div id="saveStatus" class="status"></div>
+        </div>
+      </div>
+      
+      <!-- Saved Data & Actions -->
+      <div class="card">
+        <div class="card-title">Saved Data</div>
+        <div id="savedDataPreview" class="saved-data">
+          <div class="empty-state">No data saved yet</div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Quick Actions</div>
+        <button id="fillBtn" class="btn btn-success" style="margin-bottom: 10px;">Auto-Fill on Page</button>
+        <div class="btn-group">
+          <button id="clearBtn" class="btn btn-secondary">Clear All</button>
+          <button id="exportBtn" class="btn btn-secondary">Export</button>
+        </div>
+        <div id="actionStatus" class="status"></div>
+      </div>
+    </div>
+    
+    <div id="upload" class="tab-content">
+      <div class="upload-section">
+        <!-- Assessment Type Selection -->
+        <div class="card">
+          <div class="card-title">Select Assessment Type</div>
+          <select id="assessmentType">
+            <option value="">Choose assessment...</option>
+            <option value="quiz1">Quiz 1 (/15)</option>
+            <option value="quiz2">Quiz 2 (/15)</option>
+            <option value="quiz3">Quiz 3 (/15)</option>
+            <option value="midterm">Midterm (/25)</option>
+            <option value="final">Final (/40)</option>
+          </select>
+        </div>
+        
+        <!-- Upload Dropzone -->
+        <div class="card" id="uploadCard">
+          <div class="upload-dropzone" id="uploadDropzone">
+            <div class="upload-icon">↑</div>
+            <div class="upload-text">Drag & drop mark sheets</div>
+            <div class="upload-subtext">(Images / PDF)</div>
+            <div class="upload-subtext" style="margin-top: 12px; color: var(--accent-primary); font-weight: 500;">or click to browse files</div>
+            <div class="upload-formats">Supports: PNG · JPG · JPEG · WEBP · PDF</div>
+            <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.webp,.pdf" style="display: none;">
+          </div>
+        </div>
+        
+        <!-- Uploaded Files List -->
+        <div class="card hidden" id="fileListCard">
+          <div class="file-header">
+            <span class="file-count" id="fileCount">Uploaded Files (0)</span>
+            <button class="clear-all" id="clearAllFiles">Clear All</button>
+          </div>
+          <div class="file-list" id="fileList"></div>
+          <button class="btn btn-primary" id="processBtn" style="margin-top: 16px;">Process with AI</button>
+        </div>
+        
+        <!-- Processing State -->
+        <div class="card hidden" id="processingCard">
+          <div class="processing">
+            <div class="spinner"></div>
+            <div class="processing-text">AI is analysing mark sheets...</div>
+          </div>
+        </div>
+        
+        <!-- AI Results -->
+        <div class="card hidden" id="resultsCard">
+          <div class="ai-results-title">AI Analysis Results</div>
+          <div class="ai-results">
+            <div class="ai-results-content" id="aiResultsContent"></div>
+          </div>
+          <div class="mismatch-section hidden" id="mismatchSection">
+            <div class="mismatch-title">Mismatched IDs (Not found in portal)</div>
+            <div id="mismatchList"></div>
+          </div>
+          <button class="btn btn-success" id="fillAIBtn" style="margin-top: 16px;">Auto-Fill Matching Results</button>
+          <button class="btn btn-secondary" id="resetUploadBtn" style="margin-top: 10px;">Upload New Files</button>
+        </div>
+        
+        <div id="uploadStatus" class="status"></div>
+      </div>
+    </div>
+    
+    <div id="qrscan" class="tab-content">
+      <div class="section-title">QR Scan</div>
+      <div class="section-subtitle">Scan QR code to import marks</div>
+      
+      <!-- Assessment Type Selection -->
+      <div class="card">
+        <div class="card-title">Select Assessment Type</div>
+        <select id="qrAssessmentType">
+          <option value="">Choose assessment...</option>
+          <option value="quiz1">Quiz 1 (/15)</option>
+          <option value="quiz2">Quiz 2 (/15)</option>
+          <option value="quiz3">Quiz 3 (/15)</option>
+          <option value="assignment">Assignment (/5)</option>
+          <option value="midterm">Midterm (/25)</option>
+          <option value="final">Final (/40)</option>
+        </select>
+      </div>
+      
+      <!-- QR Code Display -->
+      <div class="card" id="qrDisplayCard">
+        <div class="card-title">Scan QR Code</div>
+        <div class="qr-section">
+          <div class="qr-container">
+            <div class="qr-code" id="qrCode">
+              <img src="qr.png" alt="QR Code" style="width: 140px; height: 140px; object-fit: contain; border-radius: var(--radius-sm);">
+            </div>
+            <div class="scan-status" id="scanStatus">Ready to scan</div>
+          </div>
+          
+          <!-- Timer (Hidden initially) -->
+          <div class="timer-container hidden" id="timerContainer">
+            <div class="timer-text">Scanning...</div>
+            <div class="timer-countdown" id="timerCountdown">10</div>
+            <div class="timer-bar">
+              <div class="timer-progress" id="timerProgress" style="width: 100%;"></div>
+            </div>
+          </div>
+          
+          <button class="btn btn-primary" id="startScanBtn">Start QR Scan</button>
+        </div>
+      </div>
+      
+      <!-- Processing State -->
+      <div class="card hidden" id="qrProcessingCard">
+        <div class="processing">
+          <div class="spinner"></div>
+          <div class="processing-text">Processing scanned data...</div>
+        </div>
+      </div>
+      
+      <!-- AI Results -->
+      <div class="card hidden" id="qrResultsCard">
+        <div class="ai-results-title">Scanned Results</div>
+        <div class="ai-results">
+          <div class="ai-results-content" id="qrAiResultsContent"></div>
+        </div>
+        <div class="mismatch-section hidden" id="qrMismatchSection">
+          <div class="mismatch-title">Mismatched IDs (Not found in portal)</div>
+          <div id="qrMismatchList"></div>
+        </div>
+        <button class="btn btn-success" id="qrFillAIBtn" style="margin-top: 16px;">Auto-Fill Matching Results</button>
+        <button class="btn btn-secondary" id="qrResetBtn" style="margin-top: 10px;">Scan Again</button>
+      </div>
+      
+      <div id="qrStatus" class="status"></div>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

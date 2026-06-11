@@ -1,0 +1,48 @@
+/* Floating button styles for DIU Marks Auto-Fill Extension */
+
+#diu-marks-autofill-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  border-radius: 50px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 9999;
+  transition: all 0.3s ease;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+#diu-marks-autofill-btn:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.5);
+}
+
+#diu-marks-autofill-btn:active {
+  transform: translateY(0);
+}
+
+/* Highlight effect for filled cells */
+.diu-autofill-highlight {
+  animation: diuFlash 1s ease;
+}
+
+@keyframes diuFlash {
+  0% {
+    background-color: #3b82f6;
+    color: white;
+  }
+  100% {
+    background-color: transparent;
+    color: inherit;
+  }
+}
