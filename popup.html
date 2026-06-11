@@ -1291,9 +1291,9 @@
     </div>
     
     <div id="qrscan" class="tab-content">
-      <div class="section-title">QR Scan</div>
-      <div class="section-subtitle">Scan QR code to import marks</div>
-      
+      <div class="section-title">Mobile Upload</div>
+      <div class="section-subtitle">Generate a QR code — scan with phone to upload mark sheets</div>
+
       <!-- Assessment Type Selection -->
       <div class="card">
         <div class="card-title">Select Assessment Type</div>
@@ -1307,42 +1307,47 @@
           <option value="final">Final (/40)</option>
         </select>
       </div>
-      
-      <!-- QR Code Display -->
+
+      <!-- QR Code card -->
       <div class="card" id="qrDisplayCard">
-        <div class="card-title">Scan QR Code</div>
+        <div class="card-title">Mobile Upload Link</div>
         <div class="qr-section">
           <div class="qr-container">
             <div class="qr-code" id="qrCode">
-              <img src="qr.png" alt="QR Code" style="width: 140px; height: 140px; object-fit: contain; border-radius: var(--radius-sm);">
+              <!-- Real QR image injected by JS -->
+              <img id="qrImage" src="" alt="QR Code" style="width:140px;height:140px;object-fit:contain;border-radius:var(--radius-sm);display:none;">
+              <div id="qrPlaceholder" style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;line-height:1.6;">
+                Select assessment<br>then click<br><strong>Generate QR</strong>
+              </div>
             </div>
-            <div class="scan-status" id="scanStatus">Ready to scan</div>
+            <div class="scan-status" id="scanStatus">No session active</div>
           </div>
-          
-          <!-- Timer (Hidden initially) -->
-          <div class="timer-container hidden" id="timerContainer">
-            <div class="timer-text">Scanning...</div>
-            <div class="timer-countdown" id="timerCountdown">10</div>
-            <div class="timer-bar">
-              <div class="timer-progress" id="timerProgress" style="width: 100%;"></div>
-            </div>
+
+          <!-- URL display -->
+          <p id="qrUrlText" style="font-size:10px;color:var(--text-muted);word-break:break-all;text-align:center;padding:0 8px;display:none;"></p>
+
+          <!-- Image count + refresh -->
+          <div id="qrImageCountCard" class="hidden" style="width:100%;text-align:center;padding:8px 0;">
+            <div id="qrImageCountText" style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">No images uploaded yet</div>
+            <button class="btn btn-secondary" id="refreshQrBtn" style="margin-bottom:0;">↻ Refresh Image Count</button>
           </div>
-          
-          <button class="btn btn-primary" id="startScanBtn">Start QR Scan</button>
+
+          <button class="btn btn-primary" id="generateQrBtn" style="margin-top:4px;">Generate QR Code</button>
+          <button class="btn btn-success hidden" id="processQrImagesBtn" style="margin-top:8px;">Process Uploaded Images</button>
         </div>
       </div>
-      
+
       <!-- Processing State -->
       <div class="card hidden" id="qrProcessingCard">
         <div class="processing">
           <div class="spinner"></div>
-          <div class="processing-text">Processing scanned data...</div>
+          <div class="processing-text">AI is analysing uploaded mark sheets…</div>
         </div>
       </div>
-      
+
       <!-- AI Results -->
       <div class="card hidden" id="qrResultsCard">
-        <div class="ai-results-title">Scanned Results</div>
+        <div class="ai-results-title">AI Analysis Results</div>
         <div class="ai-results">
           <div class="ai-results-content" id="qrAiResultsContent"></div>
         </div>
@@ -1351,9 +1356,9 @@
           <div id="qrMismatchList"></div>
         </div>
         <button class="btn btn-success" id="qrFillAIBtn" style="margin-top: 16px;">Auto-Fill Matching Results</button>
-        <button class="btn btn-secondary" id="qrResetBtn" style="margin-top: 10px;">Scan Again</button>
+        <button class="btn btn-secondary" id="qrResetBtn" style="margin-top: 10px;">New Session</button>
       </div>
-      
+
       <div id="qrStatus" class="status"></div>
     </div>
   </div>

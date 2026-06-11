@@ -14,6 +14,8 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // ==================== GLOBALS ====================
+  // Change API_BASE_URL to your LAN IP when using QR / mobile upload on local network.
+  // e.g. 'http://192.168.1.42:3001'  — the server prints it on startup as "✓ Network: ..."
   const API_BASE_URL = 'http://localhost:3001';
 
   let currentValidStudentIds = [];   // will be filled from active tab
@@ -537,153 +539,214 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  // ==================== QR SCAN TAB ====================
-  const qrAssessmentType = document.getElementById('qrAssessmentType');
-  const startScanBtn = document.getElementById('startScanBtn');
-  const qrDisplayCard = document.getElementById('qrDisplayCard');
-  const qrProcessingCard = document.getElementById('qrProcessingCard');
-  const qrResultsCard = document.getElementById('qrResultsCard');
-  const qrCode = document.getElementById('qrCode');
-  const scanStatus = document.getElementById('scanStatus');
-  const timerContainer = document.getElementById('timerContainer');
-  const timerCountdown = document.getElementById('timerCountdown');
-  const timerProgress = document.getElementById('timerProgress');
-  const qrAiResultsContent = document.getElementById('qrAiResultsContent');
-  const qrMismatchSection = document.getElementById('qrMismatchSection');
-  const qrMismatchList = document.getElementById('qrMismatchList');
-  const qrFillAIBtn = document.getElementById('qrFillAIBtn');
-  const qrResetBtn = document.getElementById('qrResetBtn');
-  const qrStatus = document.getElementById('qrStatus');
-  
-  let scanTimer = null;
-  let countdownValue = 10;
+  // ==================== QR SCAN TAB (Mobile Upload) ====================
+  const qrAssessmentType    = document.getElementById('qrAssessmentType');
+  const qrDisplayCard       = document.getElementById('qrDisplayCard');
+  const qrProcessingCard    = document.getElementById('qrProcessingCard');
+  const qrResultsCard       = document.getElementById('qrResultsCard');
+  const qrImage             = document.getElementById('qrImage');
+  const qrPlaceholder       = document.getElementById('qrPlaceholder');
+  const scanStatus          = document.getElementById('scanStatus');
+  const qrUrlText           = document.getElementById('qrUrlText');
+  const qrImageCountCard    = document.getElementById('qrImageCountCard');
+  const qrImageCountText    = document.getElementById('qrImageCountText');
+  const refreshQrBtn        = document.getElementById('refreshQrBtn');
+  const generateQrBtn       = document.getElementById('generateQrBtn');
+  const processQrImagesBtn  = document.getElementById('processQrImagesBtn');
+  const qrAiResultsContent  = document.getElementById('qrAiResultsContent');
+  const qrMismatchSection   = document.getElementById('qrMismatchSection');
+  const qrMismatchList      = document.getElementById('qrMismatchList');
+  const qrFillAIBtn         = document.getElementById('qrFillAIBtn');
+  const qrResetBtn          = document.getElementById('qrResetBtn');
+  const qrStatus            = document.getElementById('qrStatus');
 
-  startScanBtn.addEventListener('click', async function() {
+  let currentQrUuid = null;
+
+  // Helper: resolve the correct base URL for mobile QR links.
+  // Fetches /api/network-info from the server to get its LAN IP, so the QR
+  // code URL works on the phone instead of pointing to localhost.
+  async function getMobileBaseUrl() {
+    try {
+      const res  = await fetch(`${API_BASE_URL}/api/network-info`);
+      const info = await res.json();
+      if (info && info.baseUrl) return info.baseUrl;
+    } catch (_) { /* fall through */ }
+    return API_BASE_URL; // fallback: localhost (works when phone is the same device)
+  }
+
+  // Helper: show QR code image + URL for a given uuid + mobileBase
+  function applyQrSession(uuid, mobileBase) {
+    const base      = mobileBase || API_BASE_URL;
+    const uploadUrl = `${base}/upload/${uuid}`;
+    const qrApiUrl  = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uploadUrl)}&format=png&qzone=2`;
+
+    qrImage.src             = qrApiUrl;
+    qrImage.style.display   = 'block';
+    qrPlaceholder.style.display = 'none';
+
+    qrUrlText.textContent   = uploadUrl;
+    qrUrlText.style.display = 'block';
+
+    scanStatus.textContent  = 'Scan with phone to upload images';
+    scanStatus.className    = 'scan-status scanning';
+
+    qrImageCountCard.classList.remove('hidden');
+    processQrImagesBtn.classList.remove('hidden');
+    generateQrBtn.textContent = '↻ Regenerate';
+  }
+
+  // ── Generate QR ─────────────────────────────────────────────────────────────
+  generateQrBtn.addEventListener('click', async function() {
     const assessment = qrAssessmentType.value;
     if (!assessment) {
       showStatus(qrStatus, 'Please select an assessment type first!', 'error');
       return;
     }
-    // Fetch live student IDs before generating fake QR data
-    currentValidStudentIds = await fetchStudentIds();
-    if (currentValidStudentIds.length === 0) {
-      showStatus(qrStatus, 'Could not detect student IDs on the page. Make sure you are on the marks entry page.', 'error');
-      return;
-    }
-    startScanBtn.classList.add('hidden');
-    timerContainer.classList.remove('hidden');
-    scanStatus.textContent = 'Scanning QR code...';
-    scanStatus.classList.add('scanning');
-    qrCode.classList.add('qr-scanned');
-    countdownValue = 10;
-    timerCountdown.textContent = countdownValue;
-    timerProgress.style.width = '100%';
-    scanTimer = setInterval(() => {
-      countdownValue--;
-      timerCountdown.textContent = countdownValue;
-      timerProgress.style.width = (countdownValue / 10 * 100) + '%';
-      if (countdownValue <= 0) {
-        clearInterval(scanTimer);
-        completeScan(assessment);
-      }
-    }, 1000);
+    currentQrUuid = crypto.randomUUID();
+    processQrImagesBtn.disabled = true;
+    qrImageCountText.textContent = 'No images uploaded yet';
+    qrImageCountText.style.color = '';
+    showStatus(qrStatus, 'Generating QR code…', '');
+
+    const mobileBase = await getMobileBaseUrl();
+    applyQrSession(currentQrUuid, mobileBase);
+
+    chrome.storage.local.set({ '_pendingQrSession': { uuid: currentQrUuid, assessment } });
+    showStatus(qrStatus, 'QR code ready — scan with a mobile device to upload mark sheets.', 'success');
   });
 
-  function completeScan(assessment) {
-    scanStatus.textContent = 'Scan complete!';
-    scanStatus.classList.remove('scanning');
-    scanStatus.classList.add('complete');
-    setTimeout(() => {
-      qrDisplayCard.classList.add('hidden');
-      qrProcessingCard.classList.remove('hidden');
-      generateQRResults(assessment);
-      setTimeout(() => {
-        qrProcessingCard.classList.add('hidden');
-        qrResultsCard.classList.remove('hidden');
-        displayFilteredResults('qrAiResultsContent', 'qrMismatchSection', qrAiResults);
-        chrome.storage.local.set({ '_pendingQr': { assessment, results: qrAiResults } });
-      }, 2000);
-    }, 500);
-  }
+  // ── Refresh image count ──────────────────────────────────────────────────────
+  refreshQrBtn.addEventListener('click', async function() {
+    if (!currentQrUuid) return;
+    refreshQrBtn.disabled     = true;
+    refreshQrBtn.textContent  = 'Checking…';
 
-  function generateQRResults(assessment) {
-    qrAiResults = {};
-    let maxMarks;
-    switch(assessment) {
-      case 'quiz1': case 'quiz2': case 'quiz3': maxMarks = 15; break;
-      case 'assignment': maxMarks = 5; break;
-      case 'midterm': maxMarks = 25; break;
-      case 'final': maxMarks = 40; break;
-      default: maxMarks = 15;
+    try {
+      const resp = await fetch(`${API_BASE_URL}/api/session/${currentQrUuid}`);
+      const data = await resp.json();
+      const count = data.count || 0;
+
+      if (count > 0) {
+        qrImageCountText.textContent = `${count} image${count > 1 ? 's' : ''} uploaded from mobile`;
+        qrImageCountText.style.color = 'var(--success)';
+        processQrImagesBtn.disabled  = false;
+      } else {
+        qrImageCountText.textContent = 'No images uploaded yet';
+        qrImageCountText.style.color = '';
+      }
+      showStatus(qrStatus, `Found ${count} image${count !== 1 ? 's' : ''} on server.`, count > 0 ? 'success' : '');
+    } catch (err) {
+      showStatus(qrStatus, 'Refresh failed: ' + err.message, 'error');
+    } finally {
+      refreshQrBtn.disabled    = false;
+      refreshQrBtn.textContent = '↻ Refresh Image Count';
     }
-    // Use actual student IDs from the page
-    currentValidStudentIds.forEach(id => {
-      const randomMark = Math.floor(Math.random() * (maxMarks + 1));
-      qrAiResults[id] = randomMark;
-    });
-    // Add a couple of fake mismatched IDs for demo
-    const extraIds = ['999-99-999', '888-88-888'];
-    extraIds.forEach(id => {
-      qrAiResults[id] = Math.floor(Math.random() * (maxMarks + 1));
-    });
-  }
+  });
 
+  // ── Process uploaded images ──────────────────────────────────────────────────
+  processQrImagesBtn.addEventListener('click', async function() {
+    if (!currentQrUuid) return;
+
+    qrDisplayCard.classList.add('hidden');
+    qrProcessingCard.classList.remove('hidden');
+    showStatus(qrStatus, '', '');
+
+    try {
+      const studentData = await fetchStudentData();
+
+      const resp = await fetch(`${API_BASE_URL}/api/session/${currentQrUuid}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ students: studentData }),
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({}));
+        throw new Error(e.error || 'Analysis failed (status ' + resp.status + ')');
+      }
+
+      const apiData     = await resp.json();
+      const resultItems = Array.isArray(apiData) ? apiData : (apiData.results || []);
+
+      qrAiResults = matchResultsToStudents(resultItems, studentData);
+
+      qrProcessingCard.classList.add('hidden');
+      qrResultsCard.classList.remove('hidden');
+
+      currentValidStudentIds = studentData.map(s => s.id);
+      displayFilteredResults('qrAiResultsContent', 'qrMismatchSection', qrAiResults);
+      chrome.storage.local.set({ '_pendingQr': { assessment: qrAssessmentType.value, results: qrAiResults } });
+
+    } catch (err) {
+      showStatus(qrStatus, 'Error: ' + err.message, 'error');
+      qrProcessingCard.classList.add('hidden');
+      qrDisplayCard.classList.remove('hidden');
+    }
+  });
+
+  // ── Fill button ──────────────────────────────────────────────────────────────
   qrFillAIBtn.addEventListener('click', async function() {
     const assessment = qrAssessmentType.value;
-    currentValidStudentIds = await fetchStudentIds();
-    const matchedData = {};
-    Object.keys(qrAiResults).forEach(id => {
-      if (isValidId(id)) {
-        matchedData[id] = qrAiResults[id];
-      }
-    });
     const storageKey = 'marks_' + assessment;
-    chrome.storage.local.set({ [storageKey]: matchedData }, function() {
-      chrome.storage.local.remove('_pendingQr');
-      showStatus(qrStatus, `Saved ${Object.keys(matchedData).length} QR scan records!`, 'success');
+    chrome.storage.local.set({ [storageKey]: qrAiResults }, function() {
+      chrome.storage.local.remove(['_pendingQr', '_pendingQrSession']);
+      showStatus(qrStatus, `Saved ${Object.keys(qrAiResults).length} record(s)!`, 'success');
       loadSavedData();
       chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-        if (tabs.length > 0) {
-          const columnIndex = columnMapping[assessment];
-          chrome.tabs.sendMessage(tabs[0].id, {
-            action: 'fillMarks',
-            data: matchedData,
-            columnIndex: columnIndex,
-            columnName: assessment
-          }, function(response) {
-            if (response && response.success) {
-              showStatus(qrStatus, `Successfully filled ${response.filledCount} marks from QR scan!`, 'success');
-            }
-          });
-        }
+        if (tabs.length === 0) return;
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'fillMarks',
+          data: qrAiResults,
+          columnIndex: columnMapping[assessment],
+          columnName: assessment,
+        }, function(response) {
+          if (chrome.runtime.lastError) {
+            showStatus(qrStatus, 'Error: ' + chrome.runtime.lastError.message, 'error');
+            return;
+          }
+          if (response && response.success) {
+            showStatus(qrStatus, `Filled ${response.filledCount} marks successfully!`, 'success');
+          } else {
+            showStatus(qrStatus, response?.message || 'No matching students found', 'error');
+          }
+        });
       });
     });
   });
 
+  // ── Reset ────────────────────────────────────────────────────────────────────
   qrResetBtn.addEventListener('click', function() {
-    qrAiResults = {};
-    if (scanTimer) clearInterval(scanTimer);
-    countdownValue = 10;
+    qrAiResults   = {};
+    currentQrUuid = null;
     qrResultsCard.classList.add('hidden');
+    qrProcessingCard.classList.add('hidden');
     qrDisplayCard.classList.remove('hidden');
-    startScanBtn.classList.remove('hidden');
-    timerContainer.classList.add('hidden');
-    scanStatus.textContent = 'Ready to scan';
-    scanStatus.classList.remove('complete', 'scanning');
-    qrCode.classList.remove('qr-scanned');
-    timerCountdown.textContent = '10';
-    timerProgress.style.width = '100%';
-    chrome.storage.local.remove('_pendingQr');
+    qrImage.style.display       = 'none';
+    qrPlaceholder.style.display = 'block';
+    qrUrlText.style.display     = 'none';
+    qrImageCountCard.classList.add('hidden');
+    processQrImagesBtn.classList.add('hidden');
+    qrAssessmentType.value  = '';
+    generateQrBtn.textContent = 'Generate QR Code';
+    scanStatus.textContent  = 'No session active';
+    scanStatus.className    = 'scan-status';
+    chrome.storage.local.remove(['_pendingQr', '_pendingQrSession']);
+    showStatus(qrStatus, '', '');
   });
 
-  chrome.storage.local.get(['_pendingQr'], async function(data) {
+  // ── Restore pending session on popup open ────────────────────────────────────
+  chrome.storage.local.get(['_pendingQrSession', '_pendingQr'], async function(data) {
+    if (data._pendingQrSession) {
+      const p = data._pendingQrSession;
+      currentQrUuid = p.uuid;
+      qrAssessmentType.value = p.assessment;
+      const mobileBase = await getMobileBaseUrl();
+      applyQrSession(p.uuid, mobileBase);
+    }
     if (data._pendingQr) {
       const p = data._pendingQr;
       qrAssessmentType.value = p.assessment;
       qrAiResults = p.results;
       qrDisplayCard.classList.add('hidden');
-      startScanBtn.classList.add('hidden');
-      qrProcessingCard.classList.add('hidden');
       qrResultsCard.classList.remove('hidden');
       currentValidStudentIds = await fetchStudentIds();
       displayFilteredResults('qrAiResultsContent', 'qrMismatchSection', qrAiResults);
