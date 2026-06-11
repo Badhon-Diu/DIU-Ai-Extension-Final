@@ -14,29 +14,109 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // ==================== GLOBALS ====================
+  const API_BASE_URL = 'http://localhost:3001';
+
   let currentValidStudentIds = [];   // will be filled from active tab
+
+  // Strip hyphens so "251-15-012", "25115012", and "0242220005101707" can all
+  // be compared on equal footing.
+  function normalizeIdDigits(id) {
+    return String(id).replace(/-/g, '');
+  }
+
+  // Returns true if `id` matches any entry in currentValidStudentIds,
+  // using both exact string and digits-only comparison.
+  function isValidId(id) {
+    if (currentValidStudentIds.includes(id)) return true;
+    const norm = normalizeIdDigits(id);
+    return currentValidStudentIds.some(v => normalizeIdDigits(v) === norm);
+  }
   let voiceAiResults = {};
   let aiGeneratedResults = {};
   let qrAiResults = {};
   let uploadedFiles = [];
 
-  // ==================== HELPER: Fetch live student IDs ====================
+  // ==================== HELPERS: Fetch live student data from page ====================
+
   async function fetchStudentIds() {
     return new Promise((resolve) => {
       chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-        if (tabs.length === 0) {
-          resolve([]);
-          return;
-        }
+        if (tabs.length === 0) { resolve([]); return; }
         chrome.tabs.sendMessage(tabs[0].id, { action: 'getStudentIds' }, function(response) {
-          if (chrome.runtime.lastError || !response || !response.ids) {
-            resolve([]);
-          } else {
-            resolve(response.ids);
-          }
+          if (chrome.runtime.lastError || !response || !response.ids) resolve([]);
+          else resolve(response.ids);
         });
       });
     });
+  }
+
+  // Returns [{id, name}, ...] for all students currently on the page
+  async function fetchStudentData() {
+    return new Promise((resolve) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+        if (tabs.length === 0) { resolve([]); return; }
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'getStudentData' }, function(response) {
+          if (chrome.runtime.lastError || !response || !response.students) resolve([]);
+          else resolve(response.students);
+        });
+      });
+    });
+  }
+
+  /**
+   * Match raw API result items against the actual student list from the page.
+   * Priority: exact ID → digits-only ID → exact name → partial name.
+   * Falls back to keeping the raw ID when no match is found.
+   * Returns { [canonicalId]: mark } keyed by the real page IDs.
+   */
+  function matchResultsToStudents(resultItems, studentData) {
+    if (!resultItems || resultItems.length === 0) return {};
+
+    // If we have no student context, fall back to basic transform
+    if (!studentData || studentData.length === 0) return transformApiData(resultItems);
+
+    const byId   = new Map(studentData.map(s => [s.id, s]));
+    const byNorm = new Map(studentData.map(s => [s.id.replace(/-/g, ''), s]));
+    const byName = new Map(
+      studentData.filter(s => s.name).map(s => [s.name.toLowerCase().trim(), s])
+    );
+
+    const result = {};
+
+    resultItems.forEach(item => {
+      const rawId   = item['student id'] || item.student_id || item.studentId || '';
+      const rawName = item.name || item.studentName || item.student_name || '';
+      const mark    = item.mark ?? item.marks ?? item.score;
+      if (mark === undefined) return;
+
+      let student = null;
+
+      // 1. Exact ID
+      if (rawId) student = byId.get(rawId);
+
+      // 2. Digits-only ID  (handles "25115146" ↔ "251-15-146")
+      if (!student && rawId) student = byNorm.get(rawId.replace(/-/g, ''));
+
+      // 3. Exact name
+      if (!student && rawName) student = byName.get(rawName.toLowerCase().trim());
+
+      // 4. Partial name (AI may return only first name or truncated name)
+      if (!student && rawName) {
+        const lower = rawName.toLowerCase().trim();
+        for (const [key, val] of byName) {
+          if (key.includes(lower) || lower.includes(key)) { student = val; break; }
+        }
+      }
+
+      if (student) {
+        result[student.id] = mark;
+      } else if (rawId && rawId !== 'N/A') {
+        // No match found — keep the raw ID so content.js can still try
+        result[rawId] = mark;
+      }
+    });
+
+    return result;
   }
 
   // Update UI elements that depend on valid IDs (mismatch sections)
@@ -44,9 +124,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const resultsContent = document.getElementById(resultsContainerId);
     const mismatchSection = document.getElementById(mismatchContainerId);
     const mismatchList = document.getElementById(mismatchContainerId.replace('Section', 'List'));
-    
-    const matchedIds = Object.keys(resultsObj).filter(id => currentValidStudentIds.includes(id));
-    const mismatchedIds = Object.keys(resultsObj).filter(id => !currentValidStudentIds.includes(id));
+
+    const matchedIds   = Object.keys(resultsObj).filter(id => isValidId(id));
+    const mismatchedIds = Object.keys(resultsObj).filter(id => !isValidId(id));
     
     resultsContent.innerHTML = matchedIds.map(id => `
       <div class="result-item">
@@ -213,7 +293,8 @@ document.addEventListener('DOMContentLoaded', function() {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      const match = trimmed.match(/^(\d{3}-\d{2}-\d{3})[:\s,]+(\d+(?:\.\d+)?)$/);
+      // Accept: XXX-XX-XXX  or  16-digit barcode ID  followed by a score
+      const match = trimmed.match(/^(\d{3}-\d{2}-\d{3}|\d{16})[:\s,]+(\d+(?:\.\d+)?)$/);
       if (match) {
         data[match[1]] = parseFloat(match[2]);
       }
@@ -313,21 +394,33 @@ document.addEventListener('DOMContentLoaded', function() {
     voiceRecordCard.classList.add('hidden');
     voiceProcessingCard.classList.remove('hidden');
     try {
-      const response = await fetch('https://ai-api-remake.onrender.com/api/analyze-audio', {
+      // Fetch student list before the API call so it can be sent as context
+      const studentData = await fetchStudentData();
+
+      const response = await fetch(`${API_BASE_URL}/api/analyze-audio`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio: base64Audio, assessment: assessment })
+        body: JSON.stringify({ audio: base64Audio, assessment, students: studentData })
       });
-      if (!response.ok) throw new Error('API request failed (status ' + response.status + ')');
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.error || 'API request failed (status ' + response.status + ')');
+      }
       const apiData = await response.json();
-      voiceAiResults = transformApiData(apiData);
+
+      // Server returns { results: [...], transcript: "..." }
+      const resultItems = Array.isArray(apiData) ? apiData : (apiData.results || []);
+      const transcript  = (!Array.isArray(apiData) && apiData.transcript) ? apiData.transcript : '';
+
+      // Match against actual student list for canonical IDs
+      voiceAiResults = matchResultsToStudents(resultItems, studentData);
+
       voiceProcessingCard.classList.add('hidden');
-      showVoiceChat(apiData);
+      showVoiceChat(resultItems, transcript);
       voiceResultsCard.classList.remove('hidden');
-      // Fetch latest student IDs and refresh display
-      currentValidStudentIds = await fetchStudentIds();
+      currentValidStudentIds = studentData.map(s => s.id);
       displayFilteredResults('voiceAiResultsContent', 'voiceMismatchSection', voiceAiResults);
-      chrome.storage.local.set({ '_pendingVoice': { assessment, results: voiceAiResults, apiData } });
+      chrome.storage.local.set({ '_pendingVoice': { assessment, results: voiceAiResults, resultItems, transcript } });
     } catch (error) {
       showStatus(voiceStatus, 'Error: ' + error.message, 'error');
       voiceProcessingCard.classList.add('hidden');
@@ -335,17 +428,32 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  function showVoiceChat(apiData) {
-    if (!Array.isArray(apiData) || apiData.length === 0) {
-      voiceChatContainer.innerHTML = '<div class="chat-bubble">No marks detected in audio</div>';
-      return;
+  function showVoiceChat(resultItems, transcript) {
+    let html = '';
+
+    if (transcript) {
+      html += `<div class="chat-bubble" style="background:#f0f4ff;font-style:italic;">
+                 🎙️ Whisper heard: "${transcript}"
+               </div>`;
     }
-    voiceChatContainer.innerHTML = apiData.map(item => {
-      const id = item['student id'] || item.student_id || item.studentId || '???';
-      const mark = item.mark || item.marks || item.score || '?';
-      return `<div class="chat-bubble">Detected: ${id} → ${mark} marks</div>
-              <div class="chat-bubble ai">Recorded ${id}: ${mark}</div>`;
-    }).join('');
+
+    if (!resultItems || resultItems.length === 0) {
+      html += '<div class="chat-bubble">No marks detected in audio</div>';
+      if (transcript) {
+        html += '<div class="chat-bubble ai">The transcript above was not parsed into any marks. Check IDs and keywords (got / পেয়েছে).</div>';
+      } else if (transcript === '') {
+        html += '<div class="chat-bubble ai">Whisper returned an empty transcript. Check microphone input and audio quality.</div>';
+      }
+    } else {
+      html += resultItems.map(item => {
+        const id   = item['student id'] || item.student_id || item.studentId || '???';
+        const mark = item.mark ?? item.marks ?? item.score ?? '?';
+        return `<div class="chat-bubble">Detected: ${id} → ${mark} marks</div>
+                <div class="chat-bubble ai">Recorded ${id}: ${mark}</div>`;
+      }).join('');
+    }
+
+    voiceChatContainer.innerHTML = html;
     voiceChatCard.classList.remove('hidden');
   }
 
@@ -354,9 +462,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (Array.isArray(apiData)) {
       apiData.forEach(item => {
         const studentId = item['student id'] || item.student_id || item.studentId;
-        const mark = item.mark || item.marks || item.score;
+        const mark = item.mark ?? item.marks ?? item.score;
         if (studentId && mark !== undefined) {
           results[studentId] = mark;
+        }
+        // Also index by name so fillMarksData can fall back to name matching
+        const name = item.name || item.studentName || item.student_name;
+        if (name && mark !== undefined) {
+          results[name] = mark;
         }
       });
     }
@@ -365,30 +478,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
   voiceFillAIBtn.addEventListener('click', async function() {
     const assessment = voiceAssessmentType.value;
-    // Re-fetch IDs to be safe
-    currentValidStudentIds = await fetchStudentIds();
-    const matchedData = {};
-    Object.keys(voiceAiResults).forEach(id => {
-      if (currentValidStudentIds.includes(id)) {
-        matchedData[id] = voiceAiResults[id];
-      }
-    });
     const storageKey = 'marks_' + assessment;
-    chrome.storage.local.set({ [storageKey]: matchedData }, function() {
+    // Save all results; let fillMarksData (content script) do the matching —
+    // it already handles exact ID, normalised digits, and student name lookups.
+    chrome.storage.local.set({ [storageKey]: voiceAiResults }, function() {
       chrome.storage.local.remove('_pendingVoice');
-      showStatus(voiceStatus, `Saved ${Object.keys(matchedData).length} AI voice records!`, 'success');
+      showStatus(voiceStatus, `Saved ${Object.keys(voiceAiResults).length} AI voice records!`, 'success');
       loadSavedData();
       chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
         if (tabs.length > 0) {
           const columnIndex = columnMapping[assessment];
           chrome.tabs.sendMessage(tabs[0].id, {
             action: 'fillMarks',
-            data: matchedData,
+            data: voiceAiResults,
             columnIndex: columnIndex,
             columnName: assessment
           }, function(response) {
+            if (chrome.runtime.lastError) {
+              showStatus(voiceStatus, 'Error: ' + chrome.runtime.lastError.message, 'error');
+              return;
+            }
             if (response && response.success) {
               showStatus(voiceStatus, `Successfully filled ${response.filledCount} marks from voice AI!`, 'success');
+            } else {
+              showStatus(voiceStatus, response?.message || 'No matching students found on page', 'error');
             }
           });
         }
@@ -413,7 +526,8 @@ document.addEventListener('DOMContentLoaded', function() {
       const p = data._pendingVoice;
       voiceAssessmentType.value = p.assessment;
       voiceAiResults = p.results;
-      if (p.apiData) showVoiceChat(p.apiData);
+      if (p.resultItems !== undefined) showVoiceChat(p.resultItems, p.transcript || '');
+      else if (p.apiData) showVoiceChat(Array.isArray(p.apiData) ? p.apiData : (p.apiData.results || []), p.apiData.transcript || '');
       voiceChatCard.classList.remove('hidden');
       voiceProcessingCard.classList.add('hidden');
       voiceRecordCard.classList.add('hidden');
@@ -519,7 +633,7 @@ document.addEventListener('DOMContentLoaded', function() {
     currentValidStudentIds = await fetchStudentIds();
     const matchedData = {};
     Object.keys(qrAiResults).forEach(id => {
-      if (currentValidStudentIds.includes(id)) {
+      if (isValidId(id)) {
         matchedData[id] = qrAiResults[id];
       }
     });
@@ -662,16 +776,25 @@ document.addEventListener('DOMContentLoaded', function() {
     fileListCard.classList.add('hidden');
     processingCard.classList.remove('hidden');
     try {
+      const studentData = await fetchStudentData();
+
       const formData = new FormData();
-      uploadedFiles.forEach(file => { formData.append('images', file); });
+      uploadedFiles.forEach(file => formData.append('images', file));
       formData.append('assessment', assessment);
-      const response = await fetch('https://ai-api-remake.onrender.com/api/analyze-images', { method: 'POST', body: formData });
+      if (studentData.length > 0) {
+        formData.append('students', JSON.stringify(studentData));
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/analyze-images`, { method: 'POST', body: formData });
       if (!response.ok) throw new Error('API request failed');
       const apiData = await response.json();
-      aiGeneratedResults = transformApiData(apiData);
+
+      // Match raw results against actual student list
+      aiGeneratedResults = matchResultsToStudents(Array.isArray(apiData) ? apiData : [], studentData);
+
       processingCard.classList.add('hidden');
       resultsCard.classList.remove('hidden');
-      currentValidStudentIds = await fetchStudentIds();
+      currentValidStudentIds = studentData.map(s => s.id);
       displayFilteredResults('aiResultsContent', 'mismatchSection', aiGeneratedResults);
       chrome.storage.local.set({ '_pendingImage': { assessment, results: aiGeneratedResults } });
     } catch (error) {
@@ -683,29 +806,28 @@ document.addEventListener('DOMContentLoaded', function() {
 
   fillAIBtn.addEventListener('click', async function() {
     const assessment = assessmentType.value;
-    currentValidStudentIds = await fetchStudentIds();
-    const matchedData = {};
-    Object.keys(aiGeneratedResults).forEach(id => {
-      if (currentValidStudentIds.includes(id)) {
-        matchedData[id] = aiGeneratedResults[id];
-      }
-    });
     const storageKey = 'marks_' + assessment;
-    chrome.storage.local.set({ [storageKey]: matchedData }, function() {
+    chrome.storage.local.set({ [storageKey]: aiGeneratedResults }, function() {
       chrome.storage.local.remove('_pendingImage');
-      showStatus(uploadStatus, `Saved ${Object.keys(matchedData).length} AI-generated records!`, 'success');
+      showStatus(uploadStatus, `Saved ${Object.keys(aiGeneratedResults).length} AI-generated records!`, 'success');
       loadSavedData();
       chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
         if (tabs.length > 0) {
           const columnIndex = columnMapping[assessment];
           chrome.tabs.sendMessage(tabs[0].id, {
             action: 'fillMarks',
-            data: matchedData,
+            data: aiGeneratedResults,
             columnIndex: columnIndex,
             columnName: assessment
           }, function(response) {
+            if (chrome.runtime.lastError) {
+              showStatus(uploadStatus, 'Error: ' + chrome.runtime.lastError.message, 'error');
+              return;
+            }
             if (response && response.success) {
               showStatus(uploadStatus, `Successfully filled ${response.filledCount} marks from AI analysis!`, 'success');
+            } else {
+              showStatus(uploadStatus, response?.message || 'No matching students found on page', 'error');
             }
           });
         }

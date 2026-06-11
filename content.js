@@ -32,35 +32,51 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     return true;
   }
 
-  // NEW: Get all student IDs from the marks table
+  // Get all student IDs from the marks table
   if (request.action === 'getStudentIds') {
-    const ids = getStudentIdsFromPage();
-    sendResponse({ ids: ids });
+    sendResponse({ ids: getStudentIdsFromPage() });
+    return true;
+  }
+
+  // Get all student {id, name} pairs from the marks table
+  if (request.action === 'getStudentData') {
+    sendResponse({ students: getStudentDataFromPage() });
     return true;
   }
 });
 
+// Helper: strip hyphens for digits-only comparison
+// Allows matching "251-15-012" against "25115012", and 16-digit IDs against formatted ones
+function normalizeIdDigits(id) {
+  return String(id).replace(/-/g, '');
+}
+
 // Helper: extract student IDs from the first column of the marks table
 function getStudentIdsFromPage() {
+  return getStudentDataFromPage().map(s => s.id);
+}
+
+// Helper: extract [{id, name}] from the marks table (col 0 = ID, col 1 = name)
+function getStudentDataFromPage() {
   const table = findMarksTable();
   if (!table) return [];
-  
+
   const tbody = table.querySelector('tbody');
-  const rowsContainer = tbody || table;
-  const rows = rowsContainer.querySelectorAll('tr');
-  const ids = [];
-  
+  const rows = (tbody || table).querySelectorAll('tr');
+  const students = [];
+
   for (const row of rows) {
-    const firstCell = row.querySelector('td');
-    if (firstCell) {
-      const text = firstCell.textContent.trim();
-      // Match pattern like 251-15-012 or any DIU ID format
-      if (text.match(/^\d{3}-\d{2}-\d{3}$/)) {
-        ids.push(text);
-      }
+    const cells = row.querySelectorAll('td');
+    if (cells.length < 1) continue;
+    const idText = cells[0].textContent.trim();
+    if (idText.match(/^\d{3}-\d{2}-\d{3}$/) || idText.match(/^\d{16}$/)) {
+      students.push({
+        id: idText,
+        name: cells[1] ? cells[1].textContent.trim() : '',
+      });
     }
   }
-  return ids;
+  return students;
 }
 
 async function startAudioRecording() {
@@ -123,6 +139,20 @@ async function fillMarksData(data, columnIndex, columnName) {
   const rowsContainer = tbody || table;
   const rows = rowsContainer.querySelectorAll('tr');
 
+  // Build two secondary lookup maps so we can fall back gracefully:
+  //
+  // 1. digits-only map  → handles "251-15-012" ↔ "25115012" and 16-digit ↔ formatted mismatches
+  // 2. name map         → handles data keyed by student name instead of ID
+  const normalizedIdMap = {};
+  const nameMap = {};
+
+  Object.entries(data).forEach(([key, mark]) => {
+    normalizedIdMap[normalizeIdDigits(key)] = mark;
+    if (/[a-zA-Z]/.test(key)) {
+      nameMap[key.toLowerCase().trim()] = mark;
+    }
+  });
+
   let filledCount = 0;
   let matchedCount = 0;
 
@@ -130,15 +160,27 @@ async function fillMarksData(data, columnIndex, columnName) {
     const cells = row.querySelectorAll('td');
     if (cells.length === 0) continue;
 
-    const studentIdCell = cells[0];
-    const studentId = studentIdCell.textContent.trim();
+    const studentId   = cells[0].textContent.trim();
+    const studentName = cells[1] ? cells[1].textContent.trim() : '';
 
+    // Lookup priority:
+    //   1. Exact ID match
+    //   2. Digits-only ID match  (handles hyphens / 16-digit differences)
+    //   3. Student name match    (case-insensitive)
+    let mark;
     if (data[studentId] !== undefined) {
+      mark = data[studentId];
+    } else if (normalizedIdMap[normalizeIdDigits(studentId)] !== undefined) {
+      mark = normalizedIdMap[normalizeIdDigits(studentId)];
+    } else if (studentName && nameMap[studentName.toLowerCase()] !== undefined) {
+      mark = nameMap[studentName.toLowerCase()];
+    }
+
+    if (mark !== undefined) {
       matchedCount++;
       const targetCell = cells[columnIndex];
       if (targetCell) {
-        const score = data[studentId];
-        const filled = await fillCell(targetCell, score);
+        const filled = await fillCell(targetCell, mark);
         if (filled) filledCount++;
         await new Promise(resolve => setTimeout(resolve, 100));
       }
@@ -165,7 +207,7 @@ function findMarksTable() {
       const firstCell = row.querySelector('td');
       if (firstCell) {
         const text = firstCell.textContent.trim();
-        if (text.match(/^\d{3}-\d{2}-\d{3}$/)) {
+        if (text.match(/^\d{3}-\d{2}-\d{3}$/) || text.match(/^\d{16}$/)) {
           return table;
         }
       }
